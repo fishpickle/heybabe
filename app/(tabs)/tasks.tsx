@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,80 +11,146 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Header from '@/components/Header';
 import TaskCard from '@/components/TaskCard';
-import { Task, SelectedTask } from '@/types/taskTypes';
+import { Task } from '@/types/taskTypes';
 import { useTasks } from '@/context/TasksContext';
 
 export default function TasksScreen() {
   const [showCompleted, setShowCompleted] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('Today');
-  
+  const [activeFilter, setActiveFilter] = useState<
+    'Today' | 'This Week' | 'Weekend' | 'Next 2 Weeks'
+  >('Today');
+
   const { state } = useTasks();
   const { openTasks, completedTasks } = state;
 
-  const filterOptions = ['Today', 'This Week', 'Weekend', 'Next 2 Weeks'];
+  const filterOptions = ['Today', 'This Week', 'Weekend', 'Next 2 Weeks'] as const;
 
-  // Handlers
+  // TODO: add real filter logic later
+  const visibleOpenTasks = useMemo(() => openTasks, [openTasks]);
+  const visibleCompletedTasks = useMemo(() => completedTasks, [completedTasks]);
+
   const handleAddTask = () => {
     router.push('/(modals)/AddTaskModal' as any);
   };
 
-  const handleTaskPress = (task: Task, index: number, isCompleted = false) => {
+  const handleTaskPress = (task: Task) => {
     router.push({
       pathname: '/(modals)/TaskDetailModal' as any,
-      params: {
-        id: task.id,
-      }
+      params: { id: task.id },
     });
   };
-
-  // These handlers are now handled by the context in the modals
 
   return (
     <SafeAreaView style={styles.container}>
       <Header />
-      <ScrollView style={styles.content}>
+
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Filters */}
         <View style={styles.filterBar}>
-          {filterOptions.map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={[styles.filterPill, activeFilter === filter && styles.activeFilterPill]}
-              onPress={() => setActiveFilter(filter)}
-            >
-              <Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>
-                {filter}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {filterOptions.map((filter) => {
+            const isActive = activeFilter === filter;
+            return (
+              <TouchableOpacity
+                key={filter}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                style={[styles.filterPill, isActive && styles.activeFilterPill]}
+                onPress={() => setActiveFilter(filter)}
+                hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+              >
+                <Text
+                  style={[styles.filterText, isActive && styles.activeFilterText]}
+                >
+                  {filter}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Open Tasks */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔓 Open Tasks ({openTasks.length})</Text>
-          <View style={styles.tasksContainer}>
-            {openTasks.map((task, i) => (
-              <TaskCard key={`open-${i}`} {...task} onPress={() => handleTaskPress(task, i)} />
-            ))}
-          </View>
-        </View>
+        <View style={[styles.section, styles.sectionWithGap]}>
+          <Text style={styles.sectionTitle}>
+            🔓 Open Tasks ({visibleOpenTasks.length})
+          </Text>
 
-        {/* Completed Tasks */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowCompleted(!showCompleted)}>
-            <Text style={styles.sectionTitle}>✅ Done Tasks ({completedTasks.length})</Text>
-            <Ionicons name={showCompleted ? 'chevron-up' : 'chevron-down'} size={20} color="#6B7280" />
-          </TouchableOpacity>
-          {showCompleted && (
+          {visibleOpenTasks.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="leaf-outline" size={20} color="#6B7280" />
+              <Text style={styles.emptyText}>
+                Nothing open. Tap + to add your first task.
+              </Text>
+            </View>
+          ) : (
             <View style={styles.tasksContainer}>
-              {completedTasks.map((task, i) => (
-                <TaskCard key={`completed-${i}`} {...task} isCompleted onPress={() => handleTaskPress(task, i, true)} />
+              {visibleOpenTasks.map((task) => (
+                <TaskCard
+                  key={`open-${task.id}`} // 🔑 ensure unique key
+                  {...task}
+                  assignedTo={task.assignedTo ?? '?'}
+                  onPress={() => handleTaskPress(task)}
+                />
               ))}
             </View>
           )}
         </View>
+
+        {/* Completed Tasks */}
+        <View style={[styles.section, styles.sectionWithGap]}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => setShowCompleted((s) => !s)}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle completed tasks"
+          >
+            <Text style={styles.sectionTitle}>
+              ✅ Done Tasks ({visibleCompletedTasks.length})
+            </Text>
+            <Ionicons
+              name={showCompleted ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color="#6B7280"
+            />
+          </TouchableOpacity>
+
+          {showCompleted &&
+            (visibleCompletedTasks.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons
+                  name="checkmark-done-outline"
+                  size={20}
+                  color="#6B7280"
+                />
+                <Text style={styles.emptyText}>No completed tasks yet.</Text>
+              </View>
+            ) : (
+              <View style={styles.tasksContainer}>
+                {visibleCompletedTasks.map((task) => (
+                  <TaskCard
+                    key={`done-${task.id}`} // 🔑 ensure unique key
+                    {...task}
+                    assignedTo={task.assignedTo ?? '?'}
+                    isCompleted
+                    onPress={() => handleTaskPress(task)}
+                  />
+                ))}
+              </View>
+            ))}
+        </View>
       </ScrollView>
 
       {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={handleAddTask}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={handleAddTask}
+        accessibilityRole="button"
+        accessibilityLabel="Add a new task"
+        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+      >
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -92,53 +158,63 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  content: {
-    flex: 1,
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  content: { flex: 1 },
+  contentContainer: {
     paddingHorizontal: 16,
+    paddingBottom: 96, // keeps list clear of FAB
+    paddingTop: 8,
+    gap: 16,
   },
+
+  // Filters
   filterBar: {
     flexDirection: 'row',
-    marginVertical: 16,
+    flexWrap: 'wrap',
     gap: 8,
+    marginTop: 8,
   },
   filterPill: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#E5E7EB',
   },
-  activeFilterPill: {
-    backgroundColor: '#3B82F6',
-  },
-  filterText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  activeFilterText: {
-    color: '#FFFFFF',
-  },
-  section: {
-    marginBottom: 24,
-  },
+  activeFilterPill: { backgroundColor: '#3B82F6' },
+  filterText: { fontSize: 14, color: '#374151', fontWeight: '500' },
+  activeFilterText: { color: '#FFFFFF' },
+
+  // Sections
+  section: { marginBottom: 8 },
+  sectionWithGap: { gap: 12 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: 0.2,
   },
-  tasksContainer: {
+
+  // Tasks
+  tasksContainer: { gap: 8 },
+
+  // Empty state
+  emptyState: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
+  emptyText: { color: '#6B7280', fontSize: 14 },
+
+  // FAB
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -158,6 +234,7 @@ const styles = StyleSheet.create({
   fabIcon: {
     fontSize: 24,
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '800',
+    lineHeight: 24,
   },
 });
