@@ -1,5 +1,6 @@
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+// app/(tabs)/_layout.tsx
+import { Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabLayout() {
   return (
@@ -7,28 +8,26 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#FDFDFE',
+          backgroundColor: "#FDFDFE",
           borderTopWidth: 1,
-          borderTopColor: '#E5E7EB',
+          borderTopColor: "#E5E7EB",
           paddingTop: 8,
           paddingBottom: 8,
-          height: 80,
+          height: 80, // keep as requested
         },
-        tabBarActiveTintColor: '#FF6B6B',
-        tabBarInactiveTintColor: '#6B7280',
+        tabBarActiveTintColor: "#FF6B6B",
+        tabBarInactiveTintColor: "#6B7280",
         tabBarLabelStyle: {
           fontSize: 12,
-          fontFamily: 'Inter-SemiBold',
-          marginTop: 4,
+          fontFamily: "Inter-SemiBold",
+          marginTop: 2, // tighter than 4 for balance
         },
-        tabBarIconStyle: {
-          marginBottom: -4,
-        },
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: "Home",
           tabBarIcon: ({ size, color }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -37,7 +36,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="calendar"
         options={{
-          title: 'Calendar',
+          title: "Calendar",
           tabBarIcon: ({ size, color }) => (
             <Ionicons name="calendar" size={size} color={color} />
           ),
@@ -46,7 +45,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="tasks"
         options={{
-          title: 'Tasks',
+          title: "Tasks",
           tabBarIcon: ({ size, color }) => (
             <Ionicons name="checkmark-circle" size={size} color={color} />
           ),
@@ -55,7 +54,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: 'Alerts',
+          title: "Alerts",
           tabBarIcon: ({ size, color }) => (
             <Ionicons name="notifications" size={size} color={color} />
           ),
@@ -64,7 +63,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: "Profile",
           tabBarIcon: ({ size, color }) => (
             <Ionicons name="person" size={size} color={color} />
           ),

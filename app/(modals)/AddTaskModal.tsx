@@ -1,3 +1,4 @@
+// app/(modals)/AddTaskModal.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -10,45 +11,45 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Task, TaskPriority } from '@/types/taskTypes';
-import { getAvatarStyle, getAvatarContent } from '@/utils/taskHelpers';
+import { TaskPriority, TaskStatus, Task } from '@/types/taskTypes';
 import { useTasks } from '@/context/TasksContext';
 
 export default function AddTaskModal() {
-  const { addTask } = useTasks();
+  const { addTask, familyMembers } = useTasks();
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [selectedAssignee, setSelectedAssignee] = useState('?');
+  const [selectedAssignee, setSelectedAssignee] = useState<string | undefined>(undefined);
   const [selectedPriority, setSelectedPriority] = useState<TaskPriority>('medium');
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   const [repeatOption, setRepeatOption] = useState('Daily');
 
-  const familyMembers = [
-    { name: 'Sarah' },
-    { name: 'Mike' },
-    { name: 'Joey' },
-    { name: 'Lisa' },
-  ];
+  const handleCancel = () => router.back();
 
-  const handleCancel = () => {
-    router.back();
-  };
-
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!newTaskTitle.trim()) return;
-    const newTask = {
-      title: newTaskTitle,
-      status: selectedAssignee === '?' ? 'unclaimed' : 'claimed',
+
+    const status: TaskStatus = selectedAssignee ? 'claimed' : 'unclaimed';
+
+    // Default due date = today 23:59
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const newTask: Omit<Task, 'id'> = {
+      title: newTaskTitle.trim(),
+      status,
       priority: selectedPriority,
-      assignedTo: selectedAssignee === '?' ? undefined : selectedAssignee,
-      dueDate: 'Today',
-      isDueToday: true,
+      assignedTo: selectedAssignee,
+      dueDate: endOfToday.getTime(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
-    addTask(newTask);
+
+    await addTask(newTask);
     router.back();
   };
 
   return (
     <SafeAreaView style={styles.modalContainer}>
+      {/* Header */}
       <View style={styles.modalHeader}>
         <TouchableOpacity onPress={handleCancel}>
           <Text style={styles.modalCancelText}>Cancel</Text>
@@ -58,8 +59,10 @@ export default function AddTaskModal() {
           <Text style={styles.modalSaveText}>Save</Text>
         </TouchableOpacity>
       </View>
-      
+
+      {/* Form */}
       <ScrollView style={styles.modalContent}>
+        {/* Title */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Task Title</Text>
           <TextInput
@@ -71,46 +74,45 @@ export default function AddTaskModal() {
           />
         </View>
 
+        {/* Assign To */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Assign To</Text>
           <View style={styles.assigneeContainer}>
-            {familyMembers.map((member) => {
-              const avatarStyle = getAvatarStyle(member.name);
-              return (
-                <TouchableOpacity
-                  key={member.name}
-                  style={[
-                    styles.assigneeOption,
-                    selectedAssignee === member.name && styles.selectedAssigneeOption,
-                  ]}
-                  onPress={() => setSelectedAssignee(member.name)}
-                >
-                  <View style={[styles.assigneeAvatar, { backgroundColor: avatarStyle.backgroundColor }]}>
-                    <Text style={[styles.assigneeAvatarText, { color: avatarStyle.color }]}>
-                      {getAvatarContent(member.name)}
-                    </Text>
-                  </View>
-                  <Text style={styles.assigneeName}>{member.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {Object.values(familyMembers).map((member) => (
+              <TouchableOpacity
+                key={member.id}
+                style={[
+                  styles.assigneeOption,
+                  selectedAssignee === member.id && styles.selectedAssigneeOption,
+                ]}
+                onPress={() => setSelectedAssignee(member.id)}
+              >
+                <View style={[styles.assigneeAvatar, { backgroundColor: member.color }]}>
+                  <Text style={styles.assigneeAvatarText}>
+                    {member.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.assigneeName}>{member.name}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {/* Unassigned */}
             <TouchableOpacity
               style={[
                 styles.assigneeOption,
-                selectedAssignee === '?' && styles.selectedAssigneeOption,
+                !selectedAssignee && styles.selectedAssigneeOption,
               ]}
-              onPress={() => setSelectedAssignee('?')}
+              onPress={() => setSelectedAssignee(undefined)}
             >
-              <View style={[styles.assigneeAvatar, { backgroundColor: getAvatarStyle('?').backgroundColor }]}>
-                <Text style={[styles.assigneeAvatarText, { color: getAvatarStyle('?').color }]}>
-                  {getAvatarContent('?')}
-                </Text>
+              <View style={[styles.assigneeAvatar, { backgroundColor: '#E5E7EB' }]}>
+                <Text style={[styles.assigneeAvatarText, { color: '#374151' }]}>?</Text>
               </View>
               <Text style={styles.assigneeName}>Unassigned</Text>
             </TouchableOpacity>
           </View>
         </View>
 
+        {/* Priority */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Priority</Text>
           <View style={styles.priorityContainer}>
@@ -123,7 +125,12 @@ export default function AddTaskModal() {
                 ]}
                 onPress={() => setSelectedPriority(priority)}
               >
-                <Text style={styles.priorityOptionText}>
+                <Text
+                  style={[
+                    styles.priorityOptionText,
+                    selectedPriority === priority && { color: '#FFFFFF' },
+                  ]}
+                >
                   {priority.charAt(0).toUpperCase() + priority.slice(1)}
                 </Text>
               </TouchableOpacity>
@@ -131,6 +138,7 @@ export default function AddTaskModal() {
           </View>
         </View>
 
+        {/* Repeat */}
         <View style={styles.inputSection}>
           <View style={styles.repeatContainer}>
             <Text style={styles.inputLabel}>Repeat</Text>
@@ -152,7 +160,14 @@ export default function AddTaskModal() {
                   ]}
                   onPress={() => setRepeatOption(option)}
                 >
-                  <Text style={styles.repeatOptionText}>{option}</Text>
+                  <Text
+                    style={[
+                      styles.repeatOptionText,
+                      repeatOption === option && { color: '#FFFFFF' },
+                    ]}
+                  >
+                    {option}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
