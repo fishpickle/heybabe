@@ -11,6 +11,7 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -63,14 +64,32 @@ export default function TaskDetailModal() {
       // Reopen → reset to unclaimed, unassigned
       updateTask(buildUpdatedTask({ status: 'unclaimed', assignedTo: undefined }), task.id);
     } else if (isUnclaimed && !task.assignedTo) {
-      // Claim → assign to current user’s familyMember.id
-      let currentMemberId: string | undefined;
-      if (user) {
-        // ✅ find familyMember with matching Firebase UID
-        const entry = Object.values(familyMembers).find((m) => m.uid === user.uid);
-        currentMemberId = entry?.id; // still assign the doc id
+      // Claim → assign to current user's familyMember.id
+      if (!user) {
+        // User not authenticated, cannot claim task
+        Alert.alert(
+          'Cannot Claim Task',
+          'You must be signed in to claim a task.',
+          [{ text: 'OK' }]
+        );
+        return;
       }
-      updateTask(buildUpdatedTask({ status: 'claimed', assignedTo: currentMemberId }), task.id);
+      
+      // Find familyMember with matching Firebase UID
+      const familyMember = Object.values(familyMembers).find((m) => m.uid === user.uid);
+      
+      if (!familyMember) {
+        // User's Firebase UID doesn't match any family member
+        Alert.alert(
+          'Cannot Claim Task',
+          'Your account is not linked to any family member. Please contact your family admin to set up your account.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Successfully found family member, assign task to them
+      updateTask(buildUpdatedTask({ status: 'claimed', assignedTo: familyMember.id }), task.id);
     } else {
       // Mark complete
       updateTask(buildUpdatedTask({ status: 'completed' }), task.id);
