@@ -1,96 +1,72 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import Header from '@/components/Header';
+// app/(tabs)/index.tsx
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import Header from "@/components/Header";
+import { useEvents } from "@/context/EventsContext";
+import { useTasks } from "@/context/TasksContext";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { state: eventState } = useEvents();
+  const { state: taskState, familyMembers } = useTasks();
 
-  // Get today's date
+  // 📅 Today's date
   const today = new Date();
-  const dateOptions: Intl.DateTimeFormatOptions = { 
-    weekday: 'long', 
-    month: 'short', 
-    day: 'numeric' 
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
   };
-  const todayFormatted = today.toLocaleDateString('en-US', dateOptions);
+  const todayFormatted = today.toLocaleDateString("en-US", dateOptions);
 
-  // Mock data - in real app this would come from state/API
+  // ✅ Stats
+  const todayEvents = eventState.events.filter((ev) => {
+    const start = ev.startTime.toDate();
+    return (
+      start.getFullYear() === today.getFullYear() &&
+      start.getMonth() === today.getMonth() &&
+      start.getDate() === today.getDate()
+    );
+  });
   const todayStats = {
-    events: 2,
-    openTasks: 3,
-    alerts: 1,
+    events: todayEvents.length,
+    openTasks: taskState.openTasks.length,
+    alerts: 0, // Placeholder — could be derived from overdue tasks/events
   };
 
-  const upcomingEvents = [
-    { title: 'Soccer Practice', time: '5:00pm', assignees: ['Joey', 'Dad'] },
-    { title: 'Grocery Pickup', time: '6:30pm', assignees: ['Mom'] },
-  ];
+  // ⏩ Upcoming events (next 2)
+  const upcomingEvents = [...eventState.events]
+    .filter((ev) => ev.startTime.toDate() >= today)
+    .slice(0, 2);
 
-  const myOpenTasks = [
-    { title: 'Do the dishes', dueTime: 'Today 6pm', priority: 'high' },
-    { title: 'Walk the dog', dueTime: 'Daily 7am', priority: 'medium' },
-  ];
+  // 👤 My open tasks (assigned to current user)
+  // For now we don’t have per-user filtering in TasksContext, so just show first 2 open tasks
+  const myOpenTasks = taskState.openTasks.slice(0, 2);
 
-  const unclaimedTasks = [
-    { title: 'Take out trash', dueTime: 'Tomorrow 8am', priority: 'low' },
-  ];
+  // 🙌 Unclaimed tasks (no assignedTo)
+  const unclaimedTasks = taskState.openTasks.filter((t) => !t.assignedTo || t.assignedTo.length === 0).slice(0, 1);
 
-  const recentAlert = {
-    message: 'Soccer Practice starts in 30 minutes',
-    timestamp: '5m ago',
-  };
+  // 🔔 Recent alert (placeholder → soonest upcoming event)
+  const recentEvent = upcomingEvents[0];
+  const recentAlert = recentEvent
+    ? {
+        message: `${recentEvent.title} starts at ${recentEvent.startTime.toDate().toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })}`,
+        timestamp: "soon",
+      }
+    : null;
 
-  const getAvatarContent = (name: string) => {
-    return name.charAt(0).toUpperCase();
-  };
-
-  const getAvatarStyle = (name: string) => {
-    const colors = ['#FF6B6B', '#6FA8DC', '#93C47D', '#F6B26B', '#A78BFA'];
-    const colorIndex = name.charCodeAt(0) % colors.length;
-    return { backgroundColor: colors[colorIndex], color: '#FFFFFF' };
-  };
-
+  // Priority styles
   const getPriorityChipStyle = (priority: string) => {
     const styles = {
-      'high': { backgroundColor: '#FEE2E2', color: '#991B1B' },
-      'medium': { backgroundColor: '#FEF3C7', color: '#92400E' },
-      'low': { backgroundColor: '#DBEAFE', color: '#1E40AF' },
+      high: { backgroundColor: "#FEE2E2", color: "#991B1B" },
+      medium: { backgroundColor: "#FEF3C7", color: "#92400E" },
+      low: { backgroundColor: "#DBEAFE", color: "#1E40AF" },
     };
-    return styles[priority as keyof typeof styles];
-  };
-
-  const renderAvatars = (assignees: string[]) => {
-    const maxVisible = 2;
-    const visibleAssignees = assignees.slice(0, maxVisible);
-    const overflowCount = assignees.length - maxVisible;
-
-    return (
-      <View style={styles.avatarGroup}>
-        {visibleAssignees.map((name, index) => {
-          const avatarStyle = getAvatarStyle(name);
-          return (
-            <View 
-              key={name} 
-              style={[
-                styles.smallAvatar, 
-                avatarStyle,
-                index > 0 && styles.overlappingAvatar
-              ]}
-            >
-              <Text style={[styles.smallAvatarText, { color: avatarStyle.color }]}>
-                {getAvatarContent(name)}
-              </Text>
-            </View>
-          );
-        })}
-        {overflowCount > 0 && (
-          <View style={[styles.smallAvatar, styles.overflowAvatar, styles.overlappingAvatar]}>
-            <Text style={styles.overflowText}>+{overflowCount}</Text>
-          </View>
-        )}
-      </View>
-    );
+    return styles[priority as keyof typeof styles] || styles.low;
   };
 
   return (
@@ -99,64 +75,66 @@ export default function HomeScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>HeyBabe Dashboard</Text>
         <Text style={styles.subtitle}>Welcome to your family hub 💕</Text>
-        
+
         <View style={styles.cardsContainer}>
-          {/* Today's Snapshot Card */}
+          {/* ⭐ Snapshot Card */}
           <View style={styles.snapshotCard}>
             <View style={styles.snapshotHeader}>
               <Text style={styles.snapshotIcon}>⭐</Text>
               <Text style={styles.snapshotTitle}>It's {todayFormatted}</Text>
             </View>
             <Text style={styles.narrativeSummary}>
-              Looks like a busy day! Joey has soccer at 5, Mom's picking up groceries, and there are 3 open tasks waiting.
+              {todayStats.events > 0
+                ? `You’ve got ${todayStats.events} events today, plus ${todayStats.openTasks} open tasks.`
+                : `Nothing on the schedule yet. Maybe time for a treat?`}
             </Text>
             <Text style={styles.snapshotStats}>
-              {todayStats.events} events · {todayStats.openTasks} open tasks · {todayStats.alerts} alert
+              {todayStats.events} events · {todayStats.openTasks} open tasks · {todayStats.alerts} alerts
             </Text>
           </View>
-          
-          {/* Upcoming Events Card */}
-          <TouchableOpacity style={styles.card} onPress={() => router.push('/calendar')}>
+
+          {/* 📅 Upcoming Events */}
+          <TouchableOpacity style={styles.card} onPress={() => router.push("/(tabs)/calendar")}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>📅 Upcoming Events</Text>
               <Text style={styles.ctaLink}>See all</Text>
             </View>
             {upcomingEvents.length > 0 ? (
               <View style={styles.itemsList}>
-                {upcomingEvents.slice(0, 2).map((event, index) => (
-                  <View key={index} style={styles.eventItem}>
+                {upcomingEvents.map((ev) => (
+                  <View key={ev.id} style={styles.eventItem}>
                     <View style={styles.eventInfo}>
-                      <Text style={styles.itemTitle}>{event.title}</Text>
-                      <Text style={styles.itemTime}>{event.time}</Text>
+                      <Text style={styles.itemTitle}>{ev.title}</Text>
+                      <Text style={styles.itemTime}>
+                        {ev.startTime.toDate().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      </Text>
                     </View>
-                    {renderAvatars(event.assignees)}
                   </View>
                 ))}
               </View>
             ) : (
-              <Text style={styles.emptyText}>📅 Nothing on the calendar today — free time unlocked!</Text>
+              <Text style={styles.emptyText}>📅 Nothing on the calendar — free time unlocked!</Text>
             )}
           </TouchableOpacity>
-          
-          {/* My Open Tasks Card */}
-          <TouchableOpacity style={styles.card} onPress={() => router.push('/tasks')}>
+
+          {/* ✅ My Open Tasks */}
+          <TouchableOpacity style={styles.card} onPress={() => router.push("/(tabs)/tasks")}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>✅ My Open Tasks</Text>
               <Text style={styles.ctaLink}>See all</Text>
             </View>
             {myOpenTasks.length > 0 ? (
               <View style={styles.itemsList}>
-                {myOpenTasks.slice(0, 2).map((task, index) => {
-                  const priorityStyle = getPriorityChipStyle(task.priority);
+                {myOpenTasks.map((task) => {
+                  const priorityStyle = getPriorityChipStyle(task.priority || "low");
                   return (
-                    <View key={index} style={styles.taskItem}>
+                    <View key={task.id} style={styles.taskItem}>
                       <View style={styles.taskInfo}>
                         <Text style={styles.itemTitle}>{task.title}</Text>
-                        <Text style={styles.itemTime}>{task.dueTime}</Text>
                       </View>
                       <View style={[styles.priorityChip, priorityStyle]}>
                         <Text style={[styles.priorityText, { color: priorityStyle.color }]}>
-                          {task.priority}
+                          {task.priority || "low"}
                         </Text>
                       </View>
                     </View>
@@ -167,26 +145,25 @@ export default function HomeScreen() {
               <Text style={styles.emptyText}>✅ You're all caught up!</Text>
             )}
           </TouchableOpacity>
-          
-          {/* Unclaimed Tasks Card */}
-          <TouchableOpacity style={styles.card} onPress={() => router.push('/tasks')}>
+
+          {/* 👐 Unclaimed Tasks */}
+          <TouchableOpacity style={styles.card} onPress={() => router.push("/(tabs)/tasks")}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>👐 Unclaimed Tasks</Text>
               <Text style={styles.ctaLink}>See all</Text>
             </View>
             {unclaimedTasks.length > 0 ? (
               <View style={styles.itemsList}>
-                {unclaimedTasks.slice(0, 1).map((task, index) => {
-                  const priorityStyle = getPriorityChipStyle(task.priority);
+                {unclaimedTasks.map((task) => {
+                  const priorityStyle = getPriorityChipStyle(task.priority || "low");
                   return (
-                    <View key={index} style={styles.taskItem}>
+                    <View key={task.id} style={styles.taskItem}>
                       <View style={styles.taskInfo}>
                         <Text style={styles.itemTitle}>{task.title}</Text>
-                        <Text style={styles.itemTime}>{task.dueTime}</Text>
                       </View>
                       <View style={[styles.priorityChip, priorityStyle]}>
                         <Text style={[styles.priorityText, { color: priorityStyle.color }]}>
-                          {task.priority}
+                          {task.priority || "low"}
                         </Text>
                       </View>
                     </View>
@@ -197,9 +174,9 @@ export default function HomeScreen() {
               <Text style={styles.emptyText}>👐 No unclaimed tasks right now!</Text>
             )}
           </TouchableOpacity>
-          
-          {/* Recent Alert Card */}
-          <TouchableOpacity style={styles.card} onPress={() => router.push('/notifications')}>
+
+          {/* 🔔 Recent Alert */}
+          <TouchableOpacity style={styles.card} onPress={() => router.push("/(tabs)/notifications")}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>🔔 Recent Alert</Text>
               <Text style={styles.ctaLink}>See all</Text>
@@ -220,178 +197,66 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FDFDFE',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    marginTop: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontFamily: 'Inter-Bold',
-    color: '#FF6B6B',
-  },
-  subtitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  cardsContainer: {
-    marginTop: 24,
-    paddingBottom: 32,
-  },
+  container: { flex: 1, backgroundColor: "#FDFDFE" },
+  content: { flex: 1, paddingHorizontal: 20, marginTop: 16 },
+  title: { fontSize: 22, fontFamily: "Inter-Bold", color: "#FF6B6B" },
+  subtitle: { fontSize: 16, fontFamily: "Inter-Regular", color: "#6B7280", marginTop: 4 },
+  cardsContainer: { marginTop: 24, paddingBottom: 32 },
+
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
   },
   snapshotCard: {
-    backgroundColor: '#FFF5F5',
+    backgroundColor: "#FFF5F5",
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 8,
   },
-  snapshotHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  snapshotIcon: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  snapshotTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: '#1F2937',
-  },
-  narrativeSummary: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#374151',
-    lineHeight: 24,
-    marginBottom: 16,
-  },
-  snapshotStats: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#374151',
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-Bold',
-    color: '#1F2937',
-  },
-  ctaLink: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#3B82F6',
-  },
-  itemsList: {
-    gap: 12,
-  },
-  eventItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  taskItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  alertItem: {
-    gap: 4,
-  },
-  eventInfo: {
-    flex: 1,
-  },
-  taskInfo: {
-    flex: 1,
-  },
-  itemTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-Bold',
-    color: '#1F2937',
-  },
-  itemTime: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  avatarGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  snapshotHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  snapshotIcon: { fontSize: 20, marginRight: 8 },
+  snapshotTitle: { fontSize: 18, fontFamily: "Inter-Bold", color: "#1F2937" },
+  narrativeSummary: { fontSize: 16, fontFamily: "Inter-Regular", color: "#374151", lineHeight: 24, marginBottom: 16 },
+  snapshotStats: { fontSize: 16, fontFamily: "Inter-SemiBold", color: "#374151", textAlign: "center", paddingVertical: 8 },
+
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  cardTitle: { fontSize: 16, fontFamily: "Inter-Bold", color: "#1F2937" },
+  ctaLink: { fontSize: 14, fontFamily: "Inter-SemiBold", color: "#3B82F6" },
+
+  itemsList: { gap: 12 },
+  eventItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  taskItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  alertItem: { gap: 4 },
+  eventInfo: { flex: 1 },
+  taskInfo: { flex: 1 },
+
+  itemTitle: { fontSize: 16, fontFamily: "Inter-Bold", color: "#1F2937" },
+  itemTime: { fontSize: 14, fontFamily: "Inter-Regular", color: "#6B7280", marginTop: 2 },
+
+  avatarGroup: { flexDirection: "row", alignItems: "center" },
   smallAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    width: 20, height: 20, borderRadius: 10,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 2, borderColor: "#FFFFFF",
   },
-  overlappingAvatar: {
-    marginLeft: -6,
-  },
-  overflowAvatar: {
-    backgroundColor: '#6B7280',
-  },
-  smallAvatarText: {
-    fontSize: 10,
-    fontFamily: 'Inter-Bold',
-  },
-  overflowText: {
-    fontSize: 8,
-    fontFamily: 'Inter-Bold',
-    color: '#FFFFFF',
-  },
-  priorityChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  priorityText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Bold',
-  },
-  emptyText: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#6B7280',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    paddingVertical: 12,
-  },
+  overlappingAvatar: { marginLeft: -6 },
+  overflowAvatar: { backgroundColor: "#6B7280" },
+  smallAvatarText: { fontSize: 10, fontFamily: "Inter-Bold" },
+  overflowText: { fontSize: 8, fontFamily: "Inter-Bold", color: "#FFFFFF" },
+
+  priorityChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  priorityText: { fontSize: 12, fontFamily: "Inter-Bold" },
+  emptyText: { fontSize: 14, fontFamily: "Inter-Regular", color: "#6B7280", fontStyle: "italic", textAlign: "center", paddingVertical: 12 },
 });

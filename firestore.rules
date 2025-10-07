@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read/write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow access to user's tasks subcollection
+      match /tasks/{taskId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Family documents and subcollections
+    match /families/{familyId} {
+      // Allow read/write if user is authenticated and is a member of the family
+      allow read, write: if request.auth != null && 
+        (resource.data.members[request.auth.uid] != null || 
+         request.auth.uid == familyId); // Creator is admin
+      
+      // Family members subcollection
+      match /members/{memberId} {
+        allow read, write: if request.auth != null && 
+          (memberId == request.auth.uid || // Can manage own member doc
+           get(/databases/$(database)/documents/families/$(familyId)).data.members[request.auth.uid] != null);
+      }
+      
+      // Family events subcollection
+      match /events/{eventId} {
+        allow read, write: if request.auth != null && 
+          get(/databases/$(database)/documents/families/$(familyId)).data.members[request.auth.uid] != null;
+      }
+    }
+    
+    // Allow anonymous users to create temporary data (for guest mode)
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

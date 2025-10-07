@@ -11,15 +11,18 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Task, TaskStatus, TaskPriority } from '@/types/taskTypes';
+import { Task, TaskPriority } from '@/types/taskTypes';
 import { getAvatarStyle, getAvatarContent } from '@/utils/taskHelpers';
 import { useTasks } from '@/context/TasksContext';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TaskDetailModal() {
-  const { updateTask, deleteTask, getTaskById } = useTasks();
+  const { updateTask, deleteTask, getTaskById, familyMembers } = useTasks();
+  const { user } = useAuth(); // current signed-in Firebase user
 
   const params = useLocalSearchParams();
   const rawId = params?.id as string | string[] | undefined;
@@ -32,7 +35,7 @@ export default function TaskDetailModal() {
   if (!task) return null;
 
   const [editTaskTitle, setEditTaskTitle] = useState(task.title);
-  const [editTaskAssignee, setEditTaskAssignee] = useState(task.assignedTo || '?');
+  const [editTaskAssignee, setEditTaskAssignee] = useState<string | undefined>(task.assignedTo);
   const [editTaskPriority, setEditTaskPriority] = useState<TaskPriority>(task.priority);
   const [editRepeatEnabled, setEditRepeatEnabled] = useState(false);
   const [editRepeatOption, setEditRepeatOption] = useState('Daily');
@@ -40,20 +43,13 @@ export default function TaskDetailModal() {
   const isCompleted = task.status === 'completed';
   const isUnclaimed = task.status === 'unclaimed';
 
-  const familyMembers = [
-    { name: 'Sarah' },
-    { name: 'Mike' },
-    { name: 'Joey' },
-    { name: 'Lisa' },
-  ];
-
   const handleCancel = () => router.back();
 
   const buildUpdatedTask = (overrides?: Partial<Task>): Task => ({
     ...task,
     title: editTaskTitle.trim(),
     priority: editTaskPriority,
-    assignedTo: editTaskAssignee === '?' ? undefined : editTaskAssignee,
+    assignedTo: editTaskAssignee,
     ...overrides,
   });
 
@@ -65,14 +61,38 @@ export default function TaskDetailModal() {
 
   const handleActionCTA = () => {
     if (isCompleted) {
-      // Reopen
-      updateTask(buildUpdatedTask({ status: 'unclaimed', isCompleted: false }), task.id);
+      // Reopen → reset to unclaimed, unassigned
+      updateTask(buildUpdatedTask({ status: 'unclaimed', assignedTo: undefined }), task.id);
     } else if (isUnclaimed && !task.assignedTo) {
-      // Claim
-      updateTask(buildUpdatedTask({ status: 'claimed', assignedTo: 'Me' }), task.id);
+      // Claim → assign to current user's familyMember.id
+      if (!user) {
+        // User not authenticated, cannot claim task
+        Alert.alert(
+          'Cannot Claim Task',
+          'You must be signed in to claim a task.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Find familyMember with matching Firebase UID
+      const familyMember = Object.values(familyMembers).find((m) => m.uid === user.uid);
+      
+      if (!familyMember) {
+        // User's Firebase UID doesn't match any family member
+        Alert.alert(
+          'Cannot Claim Task',
+          'Your account is not linked to any family member. Please contact your family admin to set up your account.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Successfully found family member, assign task to them
+      updateTask(buildUpdatedTask({ status: 'claimed', assignedTo: familyMember.id }), task.id);
     } else {
       // Mark complete
-      updateTask(buildUpdatedTask({ status: 'completed', isCompleted: true }), task.id);
+      updateTask(buildUpdatedTask({ status: 'completed' }), task.id);
     }
     router.back();
   };
@@ -82,7 +102,7 @@ export default function TaskDetailModal() {
     router.back();
   };
 
-  // Decide button label & flattened style
+  // Decide button label & style
   let actionLabel = '';
   let actionStyle: any = { ...styles.primaryButton };
 
@@ -134,17 +154,17 @@ export default function TaskDetailModal() {
               <View style={styles.inputSection}>
                 <Text style={styles.inputLabel}>Assign To</Text>
                 <View style={styles.assigneeContainer}>
-                  {familyMembers.map((member) => {
+                  {Object.values(familyMembers).map((member) => {
                     const avatar = getAvatarStyle(member.name);
-                    const selected = editTaskAssignee === member.name;
+                    const selected = editTaskAssignee === member.id;
                     return (
                       <TouchableOpacity
-                        key={member.name}
+                        key={member.id}
                         style={[
                           styles.assigneeOption,
                           selected && styles.selectedAssigneeOption,
                         ]}
-                        onPress={() => setEditTaskAssignee(member.name)}
+                        onPress={() => setEditTaskAssignee(member.id)}
                       >
                         <View
                           style={[
@@ -165,12 +185,13 @@ export default function TaskDetailModal() {
                       </TouchableOpacity>
                     );
                   })}
+                  {/* Unassigned */}
                   <TouchableOpacity
                     style={[
                       styles.assigneeOption,
-                      editTaskAssignee === '?' && styles.selectedAssigneeOption,
+                      !editTaskAssignee && styles.selectedAssigneeOption,
                     ]}
-                    onPress={() => setEditTaskAssignee('?')}
+                    onPress={() => setEditTaskAssignee(undefined)}
                   >
                     <View
                       style={[

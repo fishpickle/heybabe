@@ -1,109 +1,69 @@
-import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Task } from '@/types/taskTypes';
-
-// Simple UUID generator (works across platforms)
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-const STORAGE_KEY = 'tasksState';
-
-async function loadTasksFromStorage(): Promise<TasksState | null> {
-  try {
-    const saved = await AsyncStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
-  } catch (e) {
-    console.error('Error loading tasks:', e);
-    return null;
-  }
-}
-
-async function saveTasksToStorage(state: TasksState): Promise<void> {
-  try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.error('Error saving tasks:', e);
-  }
-}
+// context/TasksContext.tsx
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  ReactNode,
+  useEffect,
+  useState,
+} from "react";
+import { Task, DecoratedTask, decorateTask } from "@/types/taskTypes";
+import { db } from "@/firebaseConfig";
+import { useAuth } from "@/context/AuthContext";
+import {
+  collection,
+  addDoc,
+  setDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  getDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 
 // ---- State & Actions ----
 interface TasksState {
-  openTasks: Task[];
-  completedTasks: Task[];
+  openTasks: DecoratedTask[];
+  completedTasks: DecoratedTask[];
 }
 
 type TasksAction =
-  | { type: 'ADD_TASK'; payload: Task }
-  | { type: 'UPDATE_TASK'; payload: { task: Task; id: string } }
-  | { type: 'DELETE_TASK'; payload: { id: string } }
-  | { type: 'LOAD_STATE'; payload: TasksState };
+  | { type: "ADD_TASK"; payload: DecoratedTask }
+  | { type: "UPDATE_TASK"; payload: { task: Task; id: string } }
+  | { type: "DELETE_TASK"; payload: { id: string } }
+  | { type: "LOAD_STATE"; payload: TasksState };
 
-// ✅ Now use UUIDs in initial state
-const initialState: TasksState = {
-  openTasks: [
-    {
-      id: generateUUID(),
-      title: 'Do the dishes',
-      status: 'unclaimed',
-      priority: 'high',
-      dueDate: 'Today 6pm',
-      isDueToday: true,
-    },
-    {
-      id: generateUUID(),
-      title: 'Walk the dog',
-      status: 'claimed',
-      priority: 'medium',
-      assignedTo: 'Lisa',
-      dueDate: 'Daily 7am',
-    },
-  ],
-  completedTasks: [
-    {
-      id: generateUUID(),
-      title: 'Math homework check',
-      status: 'completed',
-      priority: 'low',
-      assignedTo: 'Mom',
-      dueDate: 'Fri 8am',
-      isCompleted: true,
-    },
-  ],
-};
+const initialState: TasksState = { openTasks: [], completedTasks: [] };
 
 function tasksReducer(state: TasksState, action: TasksAction): TasksState {
   switch (action.type) {
-    case 'ADD_TASK':
-      return { ...state, openTasks: [...state.openTasks, action.payload] };
-
-    case 'UPDATE_TASK': {
+    case "ADD_TASK":
+      return {
+        ...state,
+        openTasks: [...state.openTasks, action.payload],
+      };
+    case "UPDATE_TASK": {
       const { task, id } = action.payload;
+      const updated = decorateTask({ ...task, id });
 
-      // Remove from both lists first (prevents duplicates)
       const openSans = state.openTasks.filter((t) => t.id !== id);
       const doneSans = state.completedTasks.filter((t) => t.id !== id);
 
-      if (task.status === 'completed') {
+      if (updated.isCompleted) {
         return {
           ...state,
+          completedTasks: [updated, ...doneSans],
           openTasks: openSans,
-          completedTasks: [...doneSans, { ...task, isCompleted: true }],
         };
       } else {
         return {
           ...state,
-          openTasks: [...openSans, { ...task, isCompleted: false }],
+          openTasks: [updated, ...openSans],
           completedTasks: doneSans,
         };
       }
     }
-
-    case 'DELETE_TASK': {
+    case "DELETE_TASK": {
       const { id } = action.payload;
       return {
         ...state,
@@ -111,72 +71,163 @@ function tasksReducer(state: TasksState, action: TasksAction): TasksState {
         completedTasks: state.completedTasks.filter((t) => t.id !== id),
       };
     }
-
-    case 'LOAD_STATE':
+    case "LOAD_STATE":
       return action.payload;
-
     default:
       return state;
   }
 }
 
-// ---- Context ----
+// ---- Family Member Type ----
+export type FamilyRole = "mom" | "dad" | "kid";
+
+interface FamilyMember {
+  id: string; // Firestore doc id
+  uid?: string; // Firebase Auth uid (optional, for mapping current user)
+  name: string;
+  color: string;
+  role: FamilyRole;
+}
+
+// ---- Context Type ----
 interface TasksContextType {
   state: TasksState;
-  dispatch: React.Dispatch<TasksAction>;
-  addTask: (task: Omit<Task, 'id'>) => void;
-  updateTask: (task: Task, id: string) => void;
-  deleteTask: (id: string) => void;
-  getTaskById: (id: string) => Task | undefined;
+  familyMembers: Record<string, FamilyMember>;
+  addTask: (task: Omit<Task, "id">) => Promise<void>;
+  updateTask: (task: Task, id: string) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  getTaskById: (id: string) => DecoratedTask | undefined;
 }
 
 const TasksContext = createContext<TasksContextType | undefined>(undefined);
 
 export function TasksProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(tasksReducer, initialState);
-  const [isLoaded, setIsLoaded] = React.useState(false);
+  const [familyId, setFamilyId] = useState<string | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<
+    Record<string, FamilyMember>
+  >({});
+  const { user } = useAuth();
 
+  // 1) Get user's familyId from their profile
   useEffect(() => {
-    (async () => {
-      const saved = await loadTasksFromStorage();
-      if (saved) dispatch({ type: 'LOAD_STATE', payload: saved });
-      setIsLoaded(true);
-    })();
-  }, []);
+    const fetchFamilyId = async () => {
+      if (!user) {
+        setFamilyId(null);
+        return;
+      }
+      const profileRef = doc(db, "users", user.uid, "profile", "main");
+      const profileSnap = await getDoc(profileRef);
+      if (profileSnap.exists()) {
+        setFamilyId(profileSnap.data().familyId || null);
+      } else {
+        setFamilyId(null);
+      }
+    };
+    fetchFamilyId();
+  }, [user]);
 
+  // 2) Subscribe to tasks in this family
   useEffect(() => {
-    if (isLoaded) saveTasksToStorage(state);
-  }, [state, isLoaded]);
+    if (!familyId) return;
 
-  const addTask = (task: Omit<Task, 'id'>) => {
-    dispatch({ type: 'ADD_TASK', payload: { ...task, id: generateUUID() } as Task });
+    const unsub = onSnapshot(
+      collection(db, "families", familyId, "tasks"),
+      (snap) => {
+        const tasks: Task[] = [];
+        snap.forEach((docSnap) =>
+          tasks.push({ id: docSnap.id, ...docSnap.data() } as Task)
+        );
+
+        const decorated = tasks.map(decorateTask);
+        const openTasks = decorated.filter((t) => !t.isCompleted);
+        const completedTasks = decorated.filter((t) => t.isCompleted);
+
+        dispatch({
+          type: "LOAD_STATE",
+          payload: { openTasks, completedTasks },
+        });
+      }
+    );
+
+    return () => unsub();
+  }, [familyId]);
+
+  // 3) Subscribe to family members
+  useEffect(() => {
+    if (!familyId) return;
+
+    const unsub = onSnapshot(
+      collection(db, "families", familyId, "members"),
+      (snap) => {
+        const members: Record<string, FamilyMember> = {};
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          members[docSnap.id] = {
+            id: docSnap.id,
+            uid: data.uid,
+            name: data.displayName || "Unknown",
+            color: data.color || "#E5E7EB",
+            role: (data.role as FamilyRole) || "kid",
+          };
+        });
+        setFamilyMembers(members);
+      }
+    );
+
+    return () => unsub();
+  }, [familyId]);
+
+  // 4) CRUD methods
+  const addTask = async (task: Omit<Task, "id">) => {
+    if (!familyId || !user) return;
+    await addDoc(collection(db, "families", familyId, "tasks"), {
+      ...task,
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   };
 
-  const updateTask = (task: Task, id: string) => {
-    dispatch({ type: 'UPDATE_TASK', payload: { task, id } });
+  const updateTask = async (task: Task, id: string) => {
+    if (!familyId) return;
+    await setDoc(
+      doc(db, "families", familyId, "tasks", id),
+      {
+        ...task,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
   };
 
-  const deleteTask = (id: string) => {
-    dispatch({ type: 'DELETE_TASK', payload: { id } });
+  const deleteTask = async (id: string) => {
+    if (!familyId) return;
+    await deleteDoc(doc(db, "families", familyId, "tasks", id));
   };
 
   const getTaskById = (id: string) =>
-    state.openTasks.find((t) => t.id === id) || state.completedTasks.find((t) => t.id === id);
+    state.openTasks.find((t) => t.id === id) ||
+    state.completedTasks.find((t) => t.id === id);
 
-  const value: TasksContextType = {
-    state,
-    dispatch,
-    addTask,
-    updateTask,
-    deleteTask,
-    getTaskById,
-  };
-
-  return <TasksContext.Provider value={value}>{children}</TasksContext.Provider>;
+  return (
+    <TasksContext.Provider
+      value={{
+        state,
+        familyMembers,
+        addTask,
+        updateTask,
+        deleteTask,
+        getTaskById,
+      }}
+    >
+      {children}
+    </TasksContext.Provider>
+  );
 }
 
 export function useTasks() {
   const ctx = useContext(TasksContext);
-  if (!ctx) throw new Error('useTasks must be used within a TasksProvider');
+  if (!ctx) throw new Error("useTasks must be used within a TasksProvider");
   return ctx;
 }

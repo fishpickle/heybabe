@@ -11,29 +11,93 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Header from '@/components/Header';
 import TaskCard from '@/components/TaskCard';
-import { Task } from '@/types/taskTypes';
+import { DecoratedTask } from '@/types/taskTypes';
 import { useTasks } from '@/context/TasksContext';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TasksScreen() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [activeFilter, setActiveFilter] = useState<
-    'Today' | 'This Week' | 'Weekend' | 'Next 2 Weeks'
+    'Today' | 'This Week' | 'Weekend' | 'Next 2 Weeks' | 'Mine'
   >('Today');
 
-  const { state } = useTasks();
+  const { state, familyMembers } = useTasks();
+  const { user } = useAuth();
   const { openTasks, completedTasks } = state;
 
-  const filterOptions = ['Today', 'This Week', 'Weekend', 'Next 2 Weeks'] as const;
+  const filterOptions = ['Today', 'This Week', 'Weekend', 'Next 2 Weeks', 'Mine'] as const;
 
-  // TODO: add real filter logic later
-  const visibleOpenTasks = useMemo(() => openTasks, [openTasks]);
-  const visibleCompletedTasks = useMemo(() => completedTasks, [completedTasks]);
+  // ✅ derive current familyMember id for "Mine"
+  const currentMemberId = useMemo(() => {
+    if (!user) return undefined;
+    const entry = Object.values(familyMembers).find((m) => m.uid === user.uid);
+    return entry?.id;
+  }, [user, familyMembers]);
+
+  const applyFilter = (tasks: DecoratedTask[]) => {
+    const now = new Date();
+
+    switch (activeFilter) {
+      case 'Today':
+        return tasks.filter((t) => t.isDueToday);
+      case 'This Week': {
+        const endOfWeek = new Date();
+        endOfWeek.setDate(now.getDate() + (7 - now.getDay()));
+        return tasks.filter((t) => {
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          return due <= endOfWeek && due >= now;
+        });
+      }
+      case 'Weekend': {
+        // weekend = next Saturday + Sunday
+        const day = now.getDay();
+        const saturday = new Date(now);
+        saturday.setDate(now.getDate() + ((6 - day + 7) % 7));
+        saturday.setHours(0, 0, 0, 0);
+
+        const sunday = new Date(saturday);
+        sunday.setDate(saturday.getDate() + 1);
+        sunday.setHours(23, 59, 59, 999);
+
+        return tasks.filter((t) => {
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          return due >= saturday && due <= sunday;
+        });
+      }
+      case 'Next 2 Weeks': {
+        const twoWeeks = new Date();
+        twoWeeks.setDate(now.getDate() + 14);
+        return tasks.filter((t) => {
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          return due <= twoWeeks && due >= now;
+        });
+      }
+      case 'Mine':
+        return currentMemberId
+          ? tasks.filter((t) => t.assignedTo === currentMemberId)
+          : [];
+      default:
+        return tasks;
+    }
+  };
+
+  const visibleOpenTasks = useMemo(
+    () => applyFilter(openTasks),
+    [openTasks, activeFilter, currentMemberId]
+  );
+  const visibleCompletedTasks = useMemo(
+    () => applyFilter(completedTasks),
+    [completedTasks, activeFilter, currentMemberId]
+  );
 
   const handleAddTask = () => {
     router.push('/(modals)/AddTaskModal' as any);
   };
 
-  const handleTaskPress = (task: Task) => {
+  const handleTaskPress = (task: DecoratedTask) => {
     router.push({
       pathname: '/(modals)/TaskDetailModal' as any,
       params: { id: task.id },
@@ -82,16 +146,16 @@ export default function TasksScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="leaf-outline" size={20} color="#6B7280" />
               <Text style={styles.emptyText}>
-                Nothing open. Tap + to add your first task.
+                No open tasks. Tap + to add one.
               </Text>
             </View>
           ) : (
             <View style={styles.tasksContainer}>
               {visibleOpenTasks.map((task) => (
                 <TaskCard
-                  key={`open-${task.id}`} // 🔑 ensure unique key
+                  key={`open-${task.id}`}
                   {...task}
-                  assignedTo={task.assignedTo ?? '?'}
+                  familyMembers={familyMembers}
                   onPress={() => handleTaskPress(task)}
                 />
               ))}
@@ -131,10 +195,9 @@ export default function TasksScreen() {
               <View style={styles.tasksContainer}>
                 {visibleCompletedTasks.map((task) => (
                   <TaskCard
-                    key={`done-${task.id}`} // 🔑 ensure unique key
+                    key={`done-${task.id}`}
                     {...task}
-                    assignedTo={task.assignedTo ?? '?'}
-                    isCompleted
+                    familyMembers={familyMembers}
                     onPress={() => handleTaskPress(task)}
                   />
                 ))}
@@ -162,7 +225,7 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   contentContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 96, // keeps list clear of FAB
+    paddingBottom: 96,
     paddingTop: 8,
     gap: 16,
   },

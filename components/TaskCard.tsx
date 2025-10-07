@@ -1,16 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Task } from '@/types/taskTypes';
+import { DecoratedTask } from '@/types/taskTypes';
 import {
   getAvatarStyle,
   getAvatarContent,
   getStatusChipStyle,
   getPriorityIcon,
 } from '@/utils/taskHelpers';
+import { FamilyMember } from '@/types/familyTypes';
 
-interface TaskCardProps extends Task {
+interface TaskCardProps extends DecoratedTask {
   onPress?: () => void;
+  familyMembers?: Record<string, FamilyMember>; // 🔑 map of familyMember.id → member info
 }
 
 export default function TaskCard({
@@ -19,17 +21,30 @@ export default function TaskCard({
   priority,
   assignedTo,
   dueDate,
-  isOverdue = false,
-  isDueToday = false,
+  isOverdue,
+  isDueToday,
   onPress,
+  familyMembers = {},
 }: TaskCardProps) {
-  // Normalize completion
   const isCompleted = status === 'completed';
 
-  // Normalize assignee for consistent avatar
-  const assignee = assignedTo && assignedTo.trim() !== '' ? assignedTo : '?';
-  const avatarStyle = getAvatarStyle(assignee);
-  const avatarText = getAvatarContent(assignee);
+  // 🔑 Resolve assignee from family members
+  let displayName = '?';
+  let avatarBg = '#E5E7EB';
+  let avatarTextColor = '#374151';
+
+  if (assignedTo && familyMembers[assignedTo]) {
+    const member = familyMembers[assignedTo];
+    displayName = member.name;
+    avatarBg = member.color;
+    avatarTextColor = '#FFFFFF';
+  } else if (assignedTo) {
+    // fallback: use helpers to generate a pseudo-avatar
+    const avatarStyle = getAvatarStyle(assignedTo);
+    displayName = getAvatarContent(assignedTo);
+    avatarBg = avatarStyle.backgroundColor;
+    avatarTextColor = avatarStyle.color;
+  }
 
   const statusStyle = getStatusChipStyle(status);
   const priorityInfo = getPriorityIcon(priority);
@@ -70,8 +85,10 @@ export default function TaskCard({
 
       {/* Meta row: assignee + due date */}
       <View style={styles.metaRow}>
-        <View style={[styles.avatar, { backgroundColor: avatarStyle.backgroundColor }]}>
-          <Text style={[styles.avatarText, { color: avatarStyle.color }]}>{avatarText}</Text>
+        <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
+          <Text style={[styles.avatarText, { color: avatarTextColor }]}>
+            {displayName.charAt(0).toUpperCase()}
+          </Text>
         </View>
 
         {dueDate && (
@@ -104,9 +121,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  completedCard: {
-    opacity: 0.6,
-  },
+  completedCard: { opacity: 0.6 },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   taskTitle: { fontSize: 16, color: '#1F2937', fontWeight: '500' },
